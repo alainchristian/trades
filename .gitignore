@@ -1,0 +1,7 @@
+.env
+config.yaml
+KILL
+logs/
+.venv/
+__pycache__/
+*.pyc
