@@ -38,6 +38,29 @@ for name, entry, sl, ts, contract, rate, vmin, vmax, vstep, exp in specs:
 print("-" * 58)
 print("All instruments size to ~$100 risk" if fails == 0 else f"{fails} failures")
 
+# Live-broker-verified rows: tick_value taken directly from symbol_info(), not
+# derived from contract_size * tick_size. XAUUSD on this broker proved the naive
+# derivation wrong (contract=100, tick_size=0.01 implies $1.00/tick, but the real
+# trade_tick_value_loss is $0.10/tick) — sizing must always use the broker's
+# reported value, never a computed one. Pulled 2026-07-29 from the MetaQuotes-Demo
+# account: GBPUSD (tick_value=1.0), USDJPY (tick_value=0.6102286526761578, current
+# rate ~163.9), XAUUSD (tick_value=0.1, current price ~4003).
+live_specs = [
+    # name, entry, sl, tick_size, tick_value, vmin, vmax, vstep, expected
+    ("GBPUSD live 20 pip", 1.27000, 1.26800, 0.00001, 1.0,                0.01, 500, 0.01, 0.50),
+    ("USDJPY live 30 pip", 163.900, 163.600, 0.001,   0.6102286526761578, 0.01, 500, 0.01, 0.54),
+    ("XAUUSD live $5",     4003.00, 3998.00, 0.01,    0.1,                0.01, 100, 0.01, 2.00),
+]
+
+print(f"\n{'Instrument':20s} {'tick_val':>9s} {'lots':>7s} {'risk $':>8s}  verdict")
+print("-" * 62)
+for name, entry, sl, ts, tick_value, vmin, vmax, vstep, exp in live_specs:
+    vol, risk = calculate_volume(EQUITY, RISK, entry, sl, ts, tick_value, vmin, vmax, vstep)
+    ok = abs(vol - exp) < 1e-9
+    fails += not ok
+    print(f"{name:20s} {tick_value:9.4f} {vol:7.2f} {risk:8.2f}  {'OK' if ok else f'FAIL exp {exp}'}")
+print("-" * 62)
+
 # Prove risk never exceeds budget after step rounding, across many random stops
 import random
 random.seed(7)
