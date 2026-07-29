@@ -248,10 +248,18 @@ class MT5Client:
     # ---------- helpers ----------
 
     def resolve_filling(self, spec: SymbolSpec) -> int:
-        """Pick a filling mode the broker actually accepts for this symbol."""
+        """
+        Pick a filling mode the broker actually accepts for this symbol.
+
+        symbol_info().filling_mode is a bitmask matching MQL5's SYMBOL_FILLING_MODE
+        enum (bit 0 = FOK, bit 1 = IOC) — the Python package does not expose
+        SYMBOL_FILLING_FOK/IOC constants for it, only the unrelated ORDER_FILLING_*
+        order-type constants, so the bits are checked as raw integers here.
+        """
         mask = spec.filling_mode_mask
-        if mask & mt5.SYMBOL_FILLING_IOC:
+        SYMBOL_FILLING_FOK, SYMBOL_FILLING_IOC = 1, 2
+        if mask & SYMBOL_FILLING_IOC:
             return mt5.ORDER_FILLING_IOC
-        if mask & mt5.SYMBOL_FILLING_FOK:
+        if mask & SYMBOL_FILLING_FOK:
             return mt5.ORDER_FILLING_FOK
         return mt5.ORDER_FILLING_RETURN
