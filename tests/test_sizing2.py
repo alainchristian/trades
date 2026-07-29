@@ -17,6 +17,12 @@ specs = [
     ("XAUUSD $5",     2350.00, 2345.00, 0.01,    100,     None,  0.01,  50, 0.01, 0.20),
     ("US30 100pt",    39000.0, 38900.0, 1.0,     1,       None,  0.10,  20, 0.10, 1.00),
     ("GBPUSD 15 pip", 1.27000, 1.26850, 0.00001, 100_000, None,  0.01, 100, 0.01, 0.66),
+    # Pulled live from symbol_info('EURUSD') on the MetaQuotes-Demo account used for
+    # this project (2026-07-29): tick_size=1e-05, contract=100000, volume_min=0.01,
+    # volume_max=500, volume_step=0.01, trade_tick_value_loss=1.0 — matches the
+    # textbook EURUSD row above except for the broker's real volume_max (500, not
+    # 100), confirming the sizing assumptions hold on this actual broker.
+    ("EURUSD live-spec 20 pip", 1.13950, 1.13750, 0.00001, 100_000, None, 0.01, 500, 0.01, 0.50),
 ]
 
 print(f"{'Instrument':16s} {'tick_val':>9s} {'lots':>7s} {'risk $':>8s}  verdict")
