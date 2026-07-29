@@ -75,21 +75,38 @@ class MT5Client:
                 "MetaTrader5 package unavailable. This module requires Windows "
                 "with the MT5 terminal installed."
             )
-        kwargs = {}
+        base_kwargs = {}
         if self.cfg.mt5.terminal_path:
-            kwargs["path"] = self.cfg.mt5.terminal_path
-        if self.cfg.mt5.login:
-            kwargs.update(
+            base_kwargs["path"] = self.cfg.mt5.terminal_path
+
+        # Prefer attaching to the terminal's already-logged-in session (fast,
+        # matches the documented "terminal must be open and logged in" setup).
+        # Passing login/password/server forces a fresh network login handshake
+        # even when already logged into that same account, which can hang or
+        # IPC-timeout on some servers — so it's only a fallback, not the default.
+        if not mt5.initialize(**base_kwargs) and self.cfg.mt5.login:
+            login_kwargs = dict(
+                base_kwargs,
                 login=int(self.cfg.mt5.login),
                 password=self.cfg.mt5.password,
                 server=self.cfg.mt5.server,
             )
-        if not mt5.initialize(**kwargs):
+            if not mt5.initialize(**login_kwargs):
+                raise RuntimeError(f"mt5.initialize failed: {mt5.last_error()}")
+        elif mt5.last_error()[0] != 1:
             raise RuntimeError(f"mt5.initialize failed: {mt5.last_error()}")
 
         acct = mt5.account_info()
         if acct is None:
             raise RuntimeError(f"account_info failed: {mt5.last_error()}")
+
+        # Never silently operate on an account other than the one configured.
+        if self.cfg.mt5.login and acct.login != int(self.cfg.mt5.login):
+            mt5.shutdown()
+            raise RuntimeError(
+                f"Connected account {acct.login} does not match configured "
+                f"MT5_LOGIN {self.cfg.mt5.login}. Refusing to start."
+            )
 
         # Hard safety gate: refuse to run on a real account unless explicitly allowed.
         is_demo = acct.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
