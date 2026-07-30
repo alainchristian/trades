@@ -86,6 +86,10 @@ error available to you.
 - Do not average into losers, and never propose widening a stop.
 - Confidence must reflect genuine setup quality. Do not inflate it. Calibration is \
 tracked over time and inflated confidence makes the whole system harder to evaluate.
+- Confidence is only meaningful for "open": the calibrated probability the trade reaches \
+target before stop. Always supply it when action is "open". For every other action, the \
+system computes confidence itself from the market structure already in the snapshot -- \
+do not try to estimate it yourself; the field is ignored.
 - Do not size positions or compute lots. Express risk appetite as a fraction of the \
 permitted maximum via risk_fraction.
 - All prices must respect the instrument's digits and the minimum stop distance given \
@@ -113,6 +117,30 @@ DECISION_TOOL = {
                 "enum": ["buy", "sell"],
                 "description": "Required when action is 'open'.",
             },
+            "setup_name": {
+                "type": "string",
+                "description": "Short label, e.g. 'H1 bullish BOS retest' or 'range fade'.",
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Multi-timeframe justification. Cite the specific levels, "
+                               "structure events and indicator readings you relied on. Write "
+                               "this before deciding confidence -- confidence should follow "
+                               "from this analysis, not the other way around.",
+            },
+            "invalidation": {
+                "type": "string",
+                "description": "What specific price behaviour would prove this analysis wrong.",
+            },
+            "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Required for 'open': calibrated probability the trade reaches "
+                               "target before stop. Ignored for every other action -- the "
+                               "system computes it deterministically from market structure, "
+                               "so do not spend effort estimating it outside 'open'.",
+            },
             "stop_loss": {
                 "type": "number",
                 "description": "Absolute price. Required for 'open'. Must sit beyond "
@@ -137,26 +165,7 @@ DECISION_TOOL = {
                 "type": "number",
                 "description": "Required for 'modify_stop'. May only reduce risk.",
             },
-            "setup_name": {
-                "type": "string",
-                "description": "Short label, e.g. 'H1 bullish BOS retest' or 'range fade'.",
-            },
-            "confidence": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1,
-                "description": "Calibrated probability this trade reaches target before stop.",
-            },
-            "invalidation": {
-                "type": "string",
-                "description": "What specific price behaviour would prove this analysis wrong.",
-            },
-            "reasoning": {
-                "type": "string",
-                "description": "Multi-timeframe justification. Cite the specific levels, "
-                               "structure events and indicator readings you relied on.",
-            },
         },
-        "required": ["action", "confidence", "reasoning"],
+        "required": ["action", "reasoning"],
     },
 }

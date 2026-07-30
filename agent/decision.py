@@ -14,6 +14,7 @@ from typing import Optional
 
 import anthropic
 
+from . import features
 from .context import DECISION_TOOL, SYSTEM_PROMPT
 
 log = logging.getLogger(__name__)
@@ -22,8 +23,8 @@ log = logging.getLogger(__name__)
 @dataclass
 class Decision:
     action: str
-    confidence: float
     reasoning: str
+    confidence: float = 0.0
     direction: Optional[str] = None
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
@@ -100,7 +101,11 @@ class DecisionEngine:
                 d.input_tokens = resp.usage.input_tokens
                 d.output_tokens = resp.usage.output_tokens
                 d.latency_ms = latency
-                return self._sanity_check(d, snapshot)
+                d = self._sanity_check(d, snapshot)
+                if d.action == "hold":
+                    # Deterministic, not the model's guess -- see features.hold_confidence.
+                    d.confidence = features.hold_confidence(snapshot["timeframes"])
+                return d
 
             except anthropic.RateLimitError as e:
                 last_error = f"Rate limited: {e}"
@@ -127,6 +132,11 @@ class DecisionEngine:
             if not d.direction or d.stop_loss is None:
                 return Decision.hold(
                     f"Model proposed 'open' without direction/stop_loss; downgraded. "
+                    f"Original: {d.reasoning[:200]}"
+                )
+            if d.raw.get("confidence") is None:
+                return Decision.hold(
+                    f"Model proposed 'open' without confidence; downgraded. "
                     f"Original: {d.reasoning[:200]}"
                 )
         if d.action in ("close", "modify_stop") and d.position_ticket is None:

@@ -116,6 +116,42 @@ def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
     return result
 
 
+def hold_confidence(timeframes: dict) -> float:
+    """
+    Confidence for a 'hold' decision, derived from cross-timeframe trend agreement
+    and ADX -- not from the model's own guess. An LLM asked for an open-ended 0-1
+    confidence number clusters in a narrow, "reasonable-sounding" band regardless
+    of how different the underlying setups are (empirically: 0.68-0.78 across an
+    outright timeframe conflict, a flat/no-structure market, and a genuine
+    near-miss). Trend and ADX are already exact numbers computed above, so there
+    is nothing left for the model to calibrate -- compute it directly instead.
+    """
+    order = ("H4", "H1", "M15")
+    trends = [timeframes[tf]["structure"]["trend"] for tf in order if tf in timeframes]
+    adx_values = [timeframes[tf]["adx_14"] for tf in order if tf in timeframes]
+
+    directional = [t for t in trends if t != "ranging"]
+    bullish = directional.count("bullish")
+    bearish = directional.count("bearish")
+
+    if not directional:
+        agreement = "absent"       # nothing trending anywhere -- unambiguous hold
+    elif bullish and bearish:
+        agreement = "conflicting"  # timeframes actively disagree -- also a clear hold
+    else:
+        agreement = "aligned"      # a real trend exists but the trade didn't clear every gate
+
+    avg_adx = sum(adx_values) / len(adx_values) if adx_values else 0.0
+
+    if agreement == "absent":
+        return 0.85
+    if agreement == "conflicting":
+        return 0.7 if avg_adx >= 20 else 0.55
+    # "aligned": a genuine near-miss -- the stronger the aligned trend, the
+    # shakier the hold call actually is.
+    return 0.2 if avg_adx >= 25 else 0.35
+
+
 def candle_anatomy(row: pd.Series) -> dict:
     """
     Body/wick proportions of a single bar — lets the model reason about rejection.

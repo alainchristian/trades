@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np, pandas as pd
 from agent import features
 from agent.config import Config
+from agent.context import DECISION_TOOL
 from agent.risk import RiskEngine
 from agent.mt5_client import SymbolSpec
 
@@ -87,5 +88,52 @@ gate("daily loss limit hit", daily_realised=-350.0)
 gate("outside session", session_ok=False)
 gate("loss-streak cooldown", consecutive_losses=3)
 gate("risk_fraction hacked to 99", risk_fraction=99)
+
+
+# --- hold confidence: deterministic, not the model's guess ------------------
+# 38/38 real logged cycles, and 9/9 fresh replayed API calls across three very
+# different setups (outright conflict, flat market, genuine near-miss), all came
+# back confidence=0.3 on "hold" -- an LLM asked for an open-ended 0-1 number
+# clusters in a narrow band regardless of how different the underlying market
+# structure is. Rewording the prompt only narrowed the cluster (0.68-0.78); it
+# never produced real separation. Trend and ADX per timeframe are already exact,
+# pure-pandas numbers computed above, so features.hold_confidence derives
+# confidence directly from them instead of trusting the model's float.
+print("\n=== features.hold_confidence ===")
+
+
+def tf(trend, adx_14):
+    return {"structure": {"trend": trend}, "adx_14": adx_14}
+
+
+cases = [
+    ("absent (all ranging)",
+     {"H4": tf("ranging", 15), "H1": tf("ranging", 18), "M15": tf("ranging", 12)}, 0.85),
+    ("conflicting, weak ADX",
+     {"H4": tf("bearish", 12), "H1": tf("bullish", 15), "M15": tf("bearish", 10)}, 0.55),
+    ("conflicting, strong ADX",
+     {"H4": tf("bullish", 30), "H1": tf("bearish", 28), "M15": tf("bullish", 25)}, 0.7),
+    ("aligned near-miss, moderate ADX",
+     {"H4": tf("ranging", 16), "H1": tf("bullish", 22), "M15": tf("bullish", 20)}, 0.35),
+    ("aligned near-miss, strong ADX",
+     {"H4": tf("ranging", 17), "H1": tf("bullish", 37), "M15": tf("bullish", 30)}, 0.2),
+]
+for label, timeframes, expected in cases:
+    got = features.hold_confidence(timeframes)
+    assert got == expected, f"{label}: expected {expected}, got {got}"
+    print(f"  {label:34s} -> {got:.2f} OK")
+
+# A genuine near-miss must always score lower than an outright conflict or a
+# flat market -- that ordering, not the exact numbers, is the point of the fix.
+absent_conf = features.hold_confidence(cases[0][1])
+nearmiss_conf = features.hold_confidence(cases[4][1])
+assert nearmiss_conf < absent_conf, "near-miss must score lower confidence than a flat market"
+print("  near-miss scores lower than flat/conflict ... OK")
+
+# Schema-level: confidence is no longer unconditionally required (only 'open'
+# needs it now; decision.py._sanity_check enforces that at the code level).
+assert "confidence" not in DECISION_TOOL["input_schema"]["required"], \
+    "confidence should not be unconditionally required -- only 'open' needs it"
+print("  confidence not globally required in schema ... OK")
 
 print("\nAll pipeline checks completed.")
