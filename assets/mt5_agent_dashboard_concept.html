@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MT5 Agent — Cycle Analysis (Concept)</title>
+<style>
+  :root{
+    --bg:#080D18;
+    --panel:#0F1729;
+    --panel-2:#121C33;
+    --border: rgba(148,163,184,0.10);
+    --border-glow: rgba(34,211,238,0.35);
+    --cyan:#22D3EE;
+    --blue:#3B82F6;
+    --green:#22C55E;
+    --amber:#F59E0B;
+    --red:#F87171;
+    --slate:#8CA0BE;
+    --text:#E7ECF5;
+    --text-dim:#9FB0C9;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(34,211,238,0.10), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(59,130,246,0.10), transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
+    color:var(--text);
+    font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;}
+  .display{font-family: ui-sans-serif, "Segoe UI Semibold", Inter, Roboto, Arial, sans-serif; letter-spacing:0.1px;}
+
+  .wrap{max-width:1360px;margin:0 auto;padding:28px 32px 60px;}
+
+  /* ---------- Header ---------- */
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{
+    width:38px;height:38px;border-radius:10px;flex:0 0 auto;
+    background:linear-gradient(135deg, rgba(34,211,238,0.25), rgba(59,130,246,0.15));
+    border:1px solid var(--border-glow);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 18px rgba(34,211,238,0.25);
+  }
+  .brand-mark svg{width:20px;height:20px;}
+  .brand h1{font-family:inherit;font-size:19px;font-weight:600;margin:0;letter-spacing:0.2px;}
+  .brand span{display:block;font-size:11.5px;color:var(--text-dim);font-weight:400;margin-top:2px;}
+
+  .status-pill{
+    display:flex;align-items:center;gap:8px;
+    padding:7px 14px 7px 10px;border-radius:999px;
+    background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.35);
+    font-size:12.5px;color:#86EFAC;font-weight:500;
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:#22C55E;
+    animation:pulse 2s infinite;}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(34,197,94,0.55);}
+    70%{box-shadow:0 0 0 7px rgba(34,197,94,0);}
+    100%{box-shadow:0 0 0 0 rgba(34,197,94,0);}
+  }
+  .header-right{display:flex;align-items:center;gap:14px;}
+  .icon-btn{
+    width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--border);background:var(--panel);color:var(--text-dim);cursor:pointer;
+  }
+
+  /* ---------- Pipeline strip ---------- */
+  .pipeline{
+    display:grid;grid-template-columns:repeat(7,1fr);gap:0;
+    background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:16px 6px;margin-bottom:22px;position:relative;overflow:hidden;
+  }
+  .pipeline::before{
+    content:"";position:absolute;top:29px;left:6%;right:6%;height:1px;
+    background:linear-gradient(90deg, transparent, rgba(148,163,184,0.25), transparent);
+    z-index:0;
+  }
+  .p-step{display:flex;flex-direction:column;align-items:center;gap:7px;position:relative;z-index:1;padding:0 6px;}
+  .p-num{
+    width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:600;
+    background:var(--panel-2);border:1px solid var(--border-glow);color:var(--cyan);
+  }
+  .p-step.active .p-num{background:rgba(34,211,238,0.18);box-shadow:0 0 12px rgba(34,211,238,0.4);}
+  .p-label{font-size:11px;color:var(--text-dim);text-align:center;line-height:1.3;max-width:110px;}
+
+  /* ---------- Hero row: cycle ring + KPIs ---------- */
+  .hero{display:grid;grid-template-columns:250px 1fr;gap:18px;margin-bottom:18px;}
+  .ring-card, .card{
+    background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;
+  }
+  .ring-card{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;}
+  .ring-wrap{position:relative;width:150px;height:150px;}
+  .ring-wrap svg{transform:rotate(-90deg);}
+  .ring-bg{stroke:rgba(148,163,184,0.12);}
+  .ring-fg{stroke:var(--cyan);stroke-linecap:round;filter:drop-shadow(0 0 6px rgba(34,211,238,0.7));}
+  .ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring-center .n{font-size:26px;font-weight:700;}
+  .ring-center .lbl{font-size:10.5px;color:var(--text-dim);margin-top:2px;}
+  .ring-caption{font-size:12px;color:var(--text-dim);}
+  .ring-caption b{color:var(--text);font-weight:600;}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;}
+  .kpi{
+    background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px 18px;
+    display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden;
+  }
+  .kpi .icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:rgba(148,163,184,0.08);}
+  .kpi .val{font-size:24px;font-weight:700;}
+  .kpi .lbl{font-size:12px;color:var(--text-dim);}
+  .kpi .delta{font-size:11px;margin-top:-4px;}
+  .up{color:#86EFAC;} .down{color:#FCA5A5;} .flat{color:var(--text-dim);}
+
+  /* ---------- Sample-size banner ---------- */
+  .banner{
+    display:flex;gap:10px;align-items:flex-start;
+    background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.3);
+    border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#FCD34D;
+  }
+  .banner svg{flex:0 0 auto;margin-top:1px;}
+  .banner b{color:#FDE68A;}
+
+  /* ---------- Chart grid ---------- */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
+  .card h3{font-size:14.5px;font-weight:600;margin:0 0 2px;}
+  .card .sub{font-size:11.5px;color:var(--text-dim);margin-bottom:16px;}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-dim);}
+  .legend-dot{width:8px;height:8px;border-radius:2px;}
+
+  /* ---------- Simple bar charts (pure CSS/SVG, no libs) ---------- */
+  .vbar-chart{display:flex;align-items:flex-end;gap:14px;height:180px;padding:0 4px;}
+  .vbar-chart .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:8px;}
+  .vbar-chart .bar{width:100%;max-width:52px;border-radius:6px 6px 3px 3px;position:relative;}
+  .vbar-chart .bar .n{position:absolute;top:-20px;left:0;right:0;text-align:center;font-size:11px;color:var(--text-dim);}
+  .vbar-chart .col .cap{font-size:11px;color:var(--text-dim);text-align:center;}
+
+  .hbar-chart{display:flex;flex-direction:column;gap:14px;padding:4px 0;}
+  .hbar-row{display:grid;grid-template-columns:140px 1fr 40px;align-items:center;gap:10px;}
+  .hbar-row .lbl{font-size:12px;color:var(--text-dim);text-align:right;}
+  .hbar-track{background:rgba(148,163,184,0.08);border-radius:5px;height:10px;overflow:hidden;}
+  .hbar-fill{height:100%;border-radius:5px;}
+  .hbar-row .val{font-size:12px;text-align:left;}
+
+  .hourgrid{display:flex;align-items:flex-end;gap:3px;height:140px;}
+  .hourgrid .hbar{flex:1;border-radius:2px 2px 0 0;background:var(--slate);position:relative;}
+  .hourgrid .hlabel{display:flex;gap:3px;margin-top:6px;}
+  .hourgrid .hlabel span{flex:1;font-size:8.5px;color:var(--text-dim);text-align:center;}
+
+  .linechart{width:100%;height:auto;}
+
+  /* ---------- Table ---------- */
+  .table-card{margin-bottom:8px;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  thead th{
+    text-align:left;font-weight:500;color:var(--text-dim);font-size:11px;
+    text-transform:uppercase;letter-spacing:0.04em;padding:0 12px 10px;border-bottom:1px solid var(--border);
+  }
+  tbody td{padding:10px 12px;border-bottom:1px solid rgba(148,163,184,0.06);}
+  tbody tr:hover{background:rgba(148,163,184,0.04);}
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:500;
+  }
+  .chip.hold{background:rgba(148,163,184,0.12);color:#CBD5E1;}
+  .chip.open{background:rgba(34,197,94,0.14);color:#86EFAC;}
+  .chip.close{background:rgba(59,130,246,0.14);color:#93C5FD;}
+  .chip.modify{background:rgba(245,158,11,0.14);color:#FCD34D;}
+  .conf-bar{width:60px;height:5px;border-radius:3px;background:rgba(148,163,184,0.15);position:relative;display:inline-block;vertical-align:middle;margin-right:8px;}
+  .conf-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--cyan);}
+  .mono-cell{font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;color:var(--text-dim);}
+
+  footer{text-align:center;color:var(--text-dim);font-size:11.5px;margin-top:30px;}
+
+  @media (max-width:1100px){
+    .kpi-grid{grid-template-columns:repeat(2,1fr);}
+    .hero{grid-template-columns:1fr;}
+    .grid2{grid-template-columns:1fr;}
+    .pipeline{grid-template-columns:repeat(4,1fr);row-gap:16px;}
+    .pipeline::before{display:none;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2 L4 6 V12 C4 17 7.5 20.5 12 22 C16.5 20.5 20 17 20 12 V6 Z" stroke="#67E8F9" stroke-width="1.4"/><path d="M9 12 L11 14 L15.5 9" stroke="#67E8F9" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <h1>MT5 Agent <span style="color:var(--text-dim);font-weight:400;">/ Cycle Analysis</span></h1>
+        <span>Reads logs/cycles_*.jsonl · EURUSD, GBPUSD, XAUUSD</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill"><span class="dot"></span> Live · next cycle in 03:41</div>
+      <div class="icon-btn" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.66.28 1.51.94 1.51 1.63V12"/></svg>
+      </div>
+    </div>
+  </header>
+
+  <!-- Pipeline: mirrors the real 7-stage cycle from the architecture page -->
+  <div class="pipeline">
+    <div class="p-step active"><div class="p-num">1</div><div class="p-label">Market data<br>(MT5 bars &amp; ticks)</div></div>
+    <div class="p-step active"><div class="p-num">2</div><div class="p-label">Feature build<br>(ATR, EMA, RSI, structure)</div></div>
+    <div class="p-step active"><div class="p-num">3</div><div class="p-label">Claude decision<br>(action + confidence)</div></div>
+    <div class="p-step"><div class="p-num">4</div><div class="p-label">Risk gate<br>(sizing, RR, limits)</div></div>
+    <div class="p-step"><div class="p-num">5</div><div class="p-label">Execution<br>(MT5 order)</div></div>
+    <div class="p-step"><div class="p-num">6</div><div class="p-label">Journal<br>(cycles_*.jsonl)</div></div>
+    <div class="p-step"><div class="p-num">7</div><div class="p-label">Feedback<br>(this dashboard)</div></div>
+  </div>
+
+  <div class="banner">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCD34D" stroke-width="1.8"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+    <div><b>Only 84 cycles logged so far.</b> Confidence calibration and trade-outcome stats aren't meaningful yet — treat this as a pipeline sanity check until the sample clears 30+ trades.</div>
+  </div>
+
+  <!-- Hero: live cycle ring + KPI row -->
+  <div class="hero">
+    <div class="ring-card">
+      <div class="ring-wrap">
+        <svg width="150" height="150" viewBox="0 0 150 150">
+          <circle class="ring-bg" cx="75" cy="75" r="64" stroke-width="10" fill="none"/>
+          <circle class="ring-fg" cx="75" cy="75" r="64" stroke-width="10" fill="none"
+            stroke-dasharray="402" stroke-dashoffset="118"/>
+        </svg>
+        <div class="ring-center">
+          <div class="n mono">70%</div>
+          <div class="lbl">HOLD RATE</div>
+        </div>
+      </div>
+      <div class="ring-caption"><b>84</b> cycles today · <b>6</b> proposals</div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#67E8F9" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div>
+        <div class="val mono">84</div>
+        <div class="lbl">Cycles logged</div>
+        <div class="delta up">▲ 12 vs yesterday</div>
+      </div>
+      <div class="kpi">
+        <div class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <div class="val mono">70.2%</div>
+        <div class="lbl">Hold rate</div>
+        <div class="delta flat">▬ steady</div>
+      </div>
+      <div class="kpi">
+        <div class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#86EFAC" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/></svg></div>
+        <div class="val mono">6</div>
+        <div class="lbl">Trade proposals</div>
+        <div class="delta up">▲ 2 vs yesterday</div>
+      </div>
+      <div class="kpi">
+        <div class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FCD34D" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+        <div class="val mono">$4.87</div>
+        <div class="lbl">Total cost</div>
+        <div class="delta down">▲ $0.62 vs yesterday</div>
+      </div>
+      <div class="kpi">
+        <div class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#93C5FD" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg></div>
+        <div class="val mono">2.4s</div>
+        <div class="lbl">Avg latency</div>
+        <div class="delta up">▼ 0.3s vs yesterday</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row: decisions by action + confidence distribution -->
+  <div class="grid2">
+    <div class="card">
+      <h3>Decisions by action</h3>
+      <div class="sub">Cycle outcomes across the selected range</div>
+      <div class="vbar-chart">
+        <div class="col"><div class="bar" style="height:100%;background:#94A3B8;"><span class="n">59</span></div><div class="cap">hold</div></div>
+        <div class="col"><div class="bar" style="height:38%;background:#22C55E;"><span class="n">6</span></div><div class="cap">open</div></div>
+        <div class="col"><div class="bar" style="height:26%;background:#3B82F6;"><span class="n">4</span></div><div class="cap">close</div></div>
+        <div class="col"><div class="bar" style="height:14%;background:#F59E0B;"><span class="n">2</span></div><div class="cap">modify_stop</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Confidence distribution</h3>
+      <div class="sub">Stated model confidence per cycle</div>
+      <div class="vbar-chart">
+        <div class="col"><div class="bar" style="height:40%;background:#22D3EE;"><span class="n">10</span></div><div class="cap">0.5–0.6</div></div>
+        <div class="col"><div class="bar" style="height:72%;background:#22D3EE;"><span class="n">18</span></div><div class="cap">0.6–0.7</div></div>
+        <div class="col"><div class="bar" style="height:100%;background:#22D3EE;"><span class="n">25</span></div><div class="cap">0.7–0.8</div></div>
+        <div class="col"><div class="bar" style="height:68%;background:#22D3EE;"><span class="n">17</span></div><div class="cap">0.8–0.9</div></div>
+        <div class="col"><div class="bar" style="height:28%;background:#22D3EE;"><span class="n">7</span></div><div class="cap">0.9–1.0</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row: cumulative cost + cost by symbol -->
+  <div class="grid2">
+    <div class="card">
+      <h3>Cumulative cost</h3>
+      <div class="sub">Claude Sonnet 5 API spend over time</div>
+      <svg class="linechart" viewBox="0 0 560 180" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="costFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <polyline fill="none" stroke="#22D3EE" stroke-width="2.5"
+          points="0,168 40,158 80,146 120,140 160,124 200,112 240,100 280,84 320,70 360,56 400,44 440,30 480,16 560,4" />
+        <polygon fill="url(#costFill)"
+          points="0,168 40,158 80,146 120,140 160,124 200,112 240,100 280,84 320,70 360,56 400,44 440,30 480,16 560,4 560,180 0,180" />
+      </svg>
+    </div>
+    <div class="card">
+      <h3>Cost by symbol</h3>
+      <div class="sub">Where the token budget is going</div>
+      <div class="hbar-chart">
+        <div class="hbar-row"><div class="lbl">EURUSD</div><div class="hbar-track"><div class="hbar-fill" style="width:100%;background:#3B82F6;"></div></div><div class="val mono">$1.62</div></div>
+        <div class="hbar-row"><div class="lbl">XAUUSD</div><div class="hbar-track"><div class="hbar-fill" style="width:97%;background:#3B82F6;"></div></div><div class="val mono">$1.58</div></div>
+        <div class="hbar-row"><div class="lbl">GBPUSD</div><div class="hbar-track"><div class="hbar-fill" style="width:75%;background:#3B82F6;"></div></div><div class="val mono">$1.21</div></div>
+        <div class="hbar-row"><div class="lbl">USDJPY</div><div class="hbar-track"><div class="hbar-fill" style="width:28%;background:#3B82F6;"></div></div><div class="val mono">$0.46</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row: cycles by hour + rejections -->
+  <div class="grid2">
+    <div class="card">
+      <h3>Cycles by hour of day</h3>
+      <div class="sub">Africa/Kigali · activity should track your trading windows</div>
+      <div class="hourgrid" id="hourgrid"></div>
+    </div>
+    <div class="card">
+      <h3>Risk gate rejections</h3>
+      <div class="sub">Why a proposed trade didn't clear risk.py</div>
+      <div class="hbar-chart">
+        <div class="hbar-row"><div class="lbl">spread too wide</div><div class="hbar-track"><div class="hbar-fill" style="width:100%;background:#F87171;"></div></div><div class="val mono">7</div></div>
+        <div class="hbar-row"><div class="lbl">below min RR</div><div class="hbar-track"><div class="hbar-fill" style="width:71%;background:#F87171;"></div></div><div class="val mono">5</div></div>
+        <div class="hbar-row"><div class="lbl">daily loss cap</div><div class="hbar-track"><div class="hbar-fill" style="width:43%;background:#F87171;"></div></div><div class="val mono">3</div></div>
+        <div class="hbar-row"><div class="lbl">max positions open</div><div class="hbar-track"><div class="hbar-fill" style="width:28%;background:#F87171;"></div></div><div class="val mono">2</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent decisions -->
+  <div class="card table-card">
+    <h3>Recent decisions</h3>
+    <div class="sub">Last cycles from the journal, newest first</div>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Symbol</th><th>Action</th><th>Setup</th><th>Confidence</th><th>Approved</th><th>RR</th><th>Cost</th></tr>
+      </thead>
+      <tbody id="tblBody"></tbody>
+    </table>
+  </div>
+
+  <footer>Concept redesign of dashboard.py — same data model, no changes to agent/analytics.py required.</footer>
+</div>
+
+<script>
+  // hour-of-day bars (24 cols), no external libs
+  var hours = [0,0,0,0,0,0,1,3,5,6,7,6,5,4,6,7,8,6,4,2,1,0,0,0];
+  var max = Math.max.apply(null, hours);
+  var hg = document.getElementById('hourgrid');
+  hours.forEach(function(v, i){
+    var bar = document.createElement('div');
+    bar.className = 'hbar';
+    bar.style.height = (max ? (v / max) * 100 : 0) + '%';
+    if (i % 6 === 0) bar.title = i + ':00';
+    hg.appendChild(bar);
+  });
+  var lab = document.createElement('div');
+  lab.className = 'hlabel';
+  [0,6,12,18,23].forEach(function(h){
+    var span = document.createElement('span');
+    span.textContent = h;
+    span.style.flex = (h===0? '0 0 4%' : h===23 ? '0 0 4%' : '1');
+    lab.appendChild(span);
+  });
+  hg.parentNode.appendChild(lab);
+
+  var rows = [
+    {t:'14:32:08', s:'XAUUSD', a:'open', setup:'EMA reclaim + ATR breakout', c:0.82, ok:true, rr:'2.1', cost:'$0.09'},
+    {t:'14:17:41', s:'EURUSD', a:'hold', setup:'range, no edge', c:0.54, ok:null, rr:'—', cost:'$0.06'},
+    {t:'14:02:55', s:'GBPUSD', a:'modify_stop', setup:'trail to breakeven', c:0.71, ok:true, rr:'—', cost:'$0.07'},
+    {t:'13:47:12', s:'EURUSD', a:'close', setup:'target hit', c:0.9, ok:true, rr:'1.8', cost:'$0.06'},
+    {t:'13:31:49', s:'XAUUSD', a:'hold', setup:'awaiting NY session', c:0.61, ok:null, rr:'—', cost:'$0.08'},
+    {t:'13:16:20', s:'USDJPY', a:'open', setup:'structure break, rejected: spread', c:0.77, ok:false, rr:'—', cost:'$0.07'}
+  ];
+  var chipClass = {hold:'hold', open:'open', close:'close', modify_stop:'modify'};
+  document.getElementById('tblBody').innerHTML = rows.map(function(r){
+    var okCell = r.ok===true ? '<span style="color:#86EFAC">✓ yes</span>' : r.ok===false ? '<span style="color:#FCA5A5">✕ no</span>' : '<span style="color:var(--text-dim)">—</span>';
+    return '<tr>' +
+      '<td class="mono-cell">' + r.t + '</td>' +
+      '<td>' + r.s + '</td>' +
+      '<td><span class="chip ' + chipClass[r.a] + '">' + r.a + '</span></td>' +
+      '<td style="color:var(--text-dim)">' + r.setup + '</td>' +
+      '<td><span class="conf-bar"><i style="width:' + (r.c*100) + '%"></i></span>' + r.c.toFixed(2) + '</td>' +
+      '<td>' + okCell + '</td>' +
+      '<td class="mono-cell">' + r.rr + '</td>' +
+      '<td class="mono-cell">' + r.cost + '</td>' +
+      '</tr>';
+  }).join('');
+</script>
+</body>
+</html>
