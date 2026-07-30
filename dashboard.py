@@ -7,8 +7,11 @@ broker, so it works whether or not the terminal is running.
 Run with:
     streamlit run dashboard.py
 """
+import math
+
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -75,7 +78,10 @@ html, body, [class*="css"] {{
         radial-gradient(ellipse 700px 500px at 100% 0%, rgba(59,130,246,0.10), transparent 60%),
         {BG};
 }}
-#MainMenu, footer, header [data-testid="stToolbar"], [data-testid="stDecoration"] {{
+/* Deploy button + "..." main menu only -- NOT the whole toolbar, which also
+   holds stExpandSidebarButton (the only way to bring the sidebar back once
+   collapsed). */
+#MainMenu, footer, [data-testid="stToolbarActions"], [data-testid="stDecoration"] {{
     visibility: hidden;
     height: 0;
 }}
@@ -206,6 +212,16 @@ hr {{
     .pipeline {{ grid-template-columns: repeat(4, 1fr); row-gap: 16px; }}
     .pipeline::before {{ display: none; }}
 }}
+
+/* ---------- Sample-size banner ---------- */
+.banner {{
+    display: flex; gap: 10px; align-items: flex-start;
+    background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 12px; padding: 12px 16px; margin-bottom: 18px;
+    font-size: 13px; color: #FCD34D;
+}}
+.banner svg {{ flex: 0 0 auto; margin-top: 1px; }}
+.banner b {{ color: #FDE68A; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -339,29 +355,120 @@ if df.empty:
     st.warning("No cycles match the current filters.")
     st.stop()
 
-# ---------- KPI rows ----------
+# ---------- Hero row: hold-rate ring + KPI cards ----------
+# Scope matches the sidebar's symbol/date-range filters (same as every chart
+# below), not a hardcoded "today" -- selecting a wider range widens these too.
 k = kpis(df)
 
-r1c1, r1c2, r1c3, r1c4 = st.columns(4)
-r1c1.metric("Cycles", f"{k['total_cycles']:,}")
-r1c2.metric("Trade proposals", f"{k['trade_proposals']:,}")
-r1c3.metric("Approved", f"{k['approved_count']:,}")
-r1c4.metric("Rejected", f"{k['rejected_count']:,}")
+# Real day-over-day deltas, computed by comparing the latest date present in
+# the filtered range against the one before it. None when there isn't a full
+# prior day to compare against (e.g. a single-day filter) -- st.metric then
+# renders no delta line rather than a fabricated one.
+range_dates = sorted(df["date"].unique())
+daily_cmp = None
+if len(range_dates) >= 2:
+    latest_k = kpis(df[df["date"] == range_dates[-1]])
+    prev_k = kpis(df[df["date"] == range_dates[-2]])
+    daily_cmp = {
+        "cycles": latest_k["total_cycles"] - prev_k["total_cycles"],
+        "hold_rate": latest_k["hold_rate"] - prev_k["hold_rate"],
+        "proposals": latest_k["trade_proposals"] - prev_k["trade_proposals"],
+        "cost": latest_k["total_cost_usd"] - prev_k["total_cost_usd"],
+        "latency_s": (latest_k["avg_latency_ms"] - prev_k["avg_latency_ms"]) / 1000,
+    }
 
-r2c1, r2c2, r2c3, r2c4 = st.columns(4)
-r2c1.metric("Hold rate", f"{k['hold_rate']:.1f}%")
-r2c2.metric("Avg confidence", f"{k['avg_confidence']:.2f}")
-r2c3.metric("Total cost", f"${k['total_cost_usd']:.2f}")
-r2c4.metric("Avg latency", f"{k['avg_latency_ms']/1000:.1f}s")
+ring_col, kpi_col = st.columns([1, 4], gap="medium")
+
+with ring_col:
+    circumference = 2 * math.pi * 64
+    offset = circumference * (1 - k["hold_rate"] / 100)
+    components.html(f"""
+<html><head><style>
+  html,body{{margin:0;padding:0;background:transparent;}}
+  .ring-card{{
+    font-family:{FONT_STACK};
+    background:{PANEL};border:1px solid {BORDER};border-radius:16px;
+    box-sizing:border-box;height:100%;padding:18px 12px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;gap:8px;color:{TEXT};
+  }}
+  .ring-wrap{{position:relative;width:130px;height:130px;}}
+  .ring-wrap svg{{transform:rotate(-90deg);}}
+  .ring-bg{{stroke:rgba(148,163,184,0.16);}}
+  .ring-fg{{stroke:{CYAN};stroke-linecap:round;
+    filter:drop-shadow(0 0 6px rgba(34,211,238,0.7));}}
+  .ring-center{{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;}}
+  .ring-center .n{{font-family:{MONO_STACK};font-size:23px;font-weight:700;}}
+  .ring-center .lbl{{font-size:9.5px;color:{TEXT_DIM};margin-top:2px;letter-spacing:0.06em;}}
+  .ring-caption{{font-size:11.5px;color:{TEXT_DIM};}}
+  .ring-caption b{{color:{TEXT};font-weight:600;}}
+</style></head><body>
+  <div class="ring-card">
+    <div class="ring-wrap">
+      <svg width="130" height="130" viewBox="0 0 150 150">
+        <circle class="ring-bg" cx="75" cy="75" r="64" stroke-width="10" fill="none"/>
+        <circle class="ring-fg" cx="75" cy="75" r="64" stroke-width="10" fill="none"
+          stroke-dasharray="{circumference:.1f}" stroke-dashoffset="{offset:.1f}"/>
+      </svg>
+      <div class="ring-center">
+        <div class="n">{k['hold_rate']:.0f}%</div>
+        <div class="lbl">HOLD RATE</div>
+      </div>
+    </div>
+    <div class="ring-caption"><b>{k['total_cycles']}</b> cycles &middot; <b>{k['trade_proposals']}</b> proposals</div>
+  </div>
+</body></html>
+""", height=230, scrolling=False)
+
+def _dcolor(diff: float, semantic: str, eps: float = 1e-9) -> str:
+    """"off" (neutral grey, no arrow judgment) for a ~zero change -- a "+0"
+    delta shouldn't render as a colored increase just because the sign is
+    non-negative."""
+    return "off" if abs(diff) < eps else semantic
+
+
+with kpi_col:
+    kc = st.columns(5)
+    kc[0].metric(
+        "↻ Cycles logged", f"{k['total_cycles']:,}",
+        delta=f"{daily_cmp['cycles']:+d} vs prior day" if daily_cmp else None,
+        delta_color=_dcolor(daily_cmp["cycles"], "normal") if daily_cmp else "off",
+    )
+    kc[1].metric(
+        "◔ Hold rate", f"{k['hold_rate']:.1f}%",
+        delta=f"{daily_cmp['hold_rate']:+.1f} pts vs prior day" if daily_cmp else None,
+        delta_color="off",
+    )
+    kc[2].metric(
+        "✓ Trade proposals", f"{k['trade_proposals']:,}",
+        delta=f"{daily_cmp['proposals']:+d} vs prior day" if daily_cmp else None,
+        delta_color=_dcolor(daily_cmp["proposals"], "normal") if daily_cmp else "off",
+    )
+    kc[3].metric(
+        "$ Total cost", f"${k['total_cost_usd']:.2f}",
+        delta=f"{daily_cmp['cost']:+.2f} vs prior day" if daily_cmp else None,
+        delta_color=_dcolor(daily_cmp["cost"], "inverse", eps=0.005) if daily_cmp else "off",
+    )
+    kc[4].metric(
+        "⚡ Avg latency", f"{k['avg_latency_ms']/1000:.1f}s",
+        delta=f"{daily_cmp['latency_s']:+.1f}s vs prior day" if daily_cmp else None,
+        delta_color=_dcolor(daily_cmp["latency_s"], "inverse", eps=0.05) if daily_cmp else "off",
+    )
 
 if k["total_cycles"] < 30:
-    st.warning(
-        f"Only {k['total_cycles']} cycles logged so far. Confidence calibration "
-        "and any trade-outcome stats below are not meaningful yet — treat "
-        "everything as a pipeline sanity check, not a performance read, until "
-        "the sample is much larger (BUILD_PLAN.md flags 30 as a floor for "
-        "trades, and cycle counts should be well past that)."
-    )
+    st.markdown(f"""
+<div class="banner">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCD34D" stroke-width="1.8">
+    <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+  </svg>
+  <div><b>Only {k['total_cycles']} cycles logged so far.</b> Confidence calibration
+  and any trade-outcome stats below are not meaningful yet — treat everything as
+  a pipeline sanity check, not a performance read, until the sample is much
+  larger (BUILD_PLAN.md flags 30 as a floor for trades, and cycle counts should
+  be well past that).</div>
+</div>
+""", unsafe_allow_html=True)
 
 st.divider()
 
