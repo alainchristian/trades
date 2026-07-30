@@ -559,8 +559,38 @@ recent = recent[[
     "reasoning",
 ]]
 
+def _action_style(val: str) -> str:
+    color = ACTION_COLORS.get(val, TEXT_DIM)
+    return f"background-color: {color}26; color: {color};"
+
+
+def _status_style(val: str) -> str:
+    if val.startswith("✅"):
+        return f"background-color: {GREEN}26; color: {GREEN};"
+    if val.startswith("❌"):
+        return f"background-color: {RED}26; color: {RED};"
+    return f"color: {TEXT_DIM};"
+
+
+def _rejections_style(val) -> str:
+    return f"color: {RED};" if val else f"color: {TEXT_DIM};"
+
+
+# st.dataframe renders through a canvas grid, not the Styler's HTML output --
+# it only honors background-color/color from a Styler (per Streamlit's docs),
+# which is exactly the chip-ish coloring we want while keeping native sort,
+# search, and CSV export. The confidence bar is st.column_config's own
+# ProgressColumn, not Styler -- it already themes to primaryColor (cyan) via
+# .streamlit/config.toml, no extra styling needed.
+styled = (
+    recent.style
+    .map(_action_style, subset=["action"])
+    .map(_status_style, subset=["status"])
+    .map(_rejections_style, subset=["rejections"])
+)
+
 st.dataframe(
-    recent,
+    styled,
     width="stretch",
     height=400,
     column_config={
