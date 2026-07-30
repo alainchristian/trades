@@ -78,10 +78,12 @@ def kpis(df: pd.DataFrame) -> dict:
         return {
             "total_cycles": 0, "hold_rate": 0.0, "total_cost_usd": 0.0,
             "avg_latency_ms": 0.0, "avg_confidence": 0.0, "trade_proposals": 0,
+            "approved_count": 0, "rejected_count": 0,
         }
     total = len(df)
     holds = (df["action"] == "hold").sum()
     proposals = total - holds
+    proposed = df[df["action"] != "hold"]
     return {
         "total_cycles": total,
         "hold_rate": holds / total * 100,
@@ -89,6 +91,8 @@ def kpis(df: pd.DataFrame) -> dict:
         "avg_latency_ms": df["latency_ms"].mean(),
         "avg_confidence": df["confidence"].mean(),
         "trade_proposals": proposals,
+        "approved_count": int((proposed["approved"] == True).sum()),   # noqa: E712
+        "rejected_count": int((proposed["approved"] == False).sum()),  # noqa: E712
     }
 
 
