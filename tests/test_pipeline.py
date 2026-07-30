@@ -29,6 +29,8 @@ s = features.summarise_timeframe(df, digits=5)
 for k in ["close", "atr_14", "ema_20", "ema_50", "ema_200", "rsi_14", "adx_14"]:
     print(f"  {k:12s} {s[k]}")
 print(f"  structure    {s['structure']['trend']} / event={s['structure']['last_event']}")
+print(f"  bars_since_break={s['structure']['bars_since_break']} "
+      f"retracement_pct={s['structure']['retracement_pct']}")
 print(f"  key_levels   {s['key_levels'][:4]}")
 print(f"  last_candle  {s['last_candle']}")
 print(f"  recent_bars  {len(s['recent_bars'])} bars, keys={list(s['recent_bars'][0])}")
@@ -43,6 +45,45 @@ print("  no-repaint check ......... OK")
 r = features.rsi(df["close"])
 assert r.between(0, 100).all(), "RSI out of bounds"
 print("  RSI bounds ............... OK")
+
+# --- features.break_recency: bars_since_break / retracement_pct -------------
+# last_event alone can only say "breaking out right now" -- it can't say "broke
+# out 5 bars ago and has since retraced 70% back toward the origin", which is
+# exactly the fact a break-and-retest entry needs. break_recency computes that.
+print("\n=== features.break_recency ===")
+
+# still extended: broke above 1.1000 at bar 3, ran to a 1.1050 peak, has only
+# pulled back to 1.1015 -- expect bars_since=5, retracement=70% of the way
+# back to the origin (not yet there).
+close_a = pd.Series([1.0980, 1.0985, 1.0990, 1.1010, 1.1030, 1.1050, 1.1040, 1.1025, 1.1015])
+bars_since, retracement = features.break_recency(close_a, close_a, level=1.1000, bullish=True)
+assert bars_since == 5, f"expected bars_since=5, got {bars_since}"
+assert retracement == 70.0, f"expected retracement=70.0, got {retracement}"
+print(f"  still extended, mid-pullback -> bars_since={bars_since} retracement={retracement} OK")
+
+# failed retest: broke above 1.1000 at bar 2, peaked at 1.1030, then fully
+# reversed back below the origin to 1.0985 -- retracement must exceed 100
+# (the origin has failed, not "a deeper discount entry").
+close_b = pd.Series([1.0980, 1.0990, 1.1010, 1.1030, 1.1010, 1.0995, 1.0985])
+bars_since, retracement = features.break_recency(close_b, close_b, level=1.1000, bullish=True)
+assert bars_since == 4, f"expected bars_since=4, got {bars_since}"
+assert retracement == 150.0, f"expected retracement=150.0, got {retracement}"
+print(f"  broken back through origin -> bars_since={bars_since} retracement={retracement} OK")
+
+# never broken: close has never exceeded level -> (None, None), not zero
+close_c = pd.Series([1.0980, 1.0985, 1.0990])
+bars_since, retracement = features.break_recency(close_c, close_c, level=1.1000, bullish=True)
+assert (bars_since, retracement) == (None, None), \
+    f"expected (None, None) when never broken, got ({bars_since}, {retracement})"
+print("  never broken -> (None, None) ... OK")
+
+# bearish mirror: broke below 1.1000 support at bar 2, bottomed at 1.0950,
+# has retraced back up 60% of the way to the origin.
+close_d = pd.Series([1.1020, 1.1010, 1.0990, 1.0970, 1.0950, 1.0965, 1.0980])
+bars_since, retracement = features.break_recency(close_d, close_d, level=1.1000, bullish=False)
+assert bars_since == 4, f"expected bars_since=4, got {bars_since}"
+assert retracement == 60.0, f"expected retracement=60.0, got {retracement}"
+print(f"  bearish mirror -> bars_since={bars_since} retracement={retracement} OK")
 
 # --- config validation ------------------------------------------------------
 print("\n=== config validation ===")

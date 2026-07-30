@@ -74,6 +74,14 @@ Method:
 timeframes. Conflicting timeframes are a reason to hold, not to pick a side.
 - Trade with structure, not against it. A CHoCH against the prevailing trend needs \
 confirmation before you act on it.
+- A valid break-and-retest entry is defined by bars_since_break and retracement_pct on \
+the timeframe that broke structure, not by requiring "last_event" to simultaneously read \
+BOS and show a pullback -- it can't do both at once, since last_event only reflects the \
+current bar. A genuine retest is a low bars_since_break (broadly within the last several \
+bars) with retracement_pct roughly 20-80: price has pulled back toward the origin without \
+re-breaking through it. retracement_pct near or past 100 means the origin has failed, not \
+a deeper discount -- that is a reason to hold, not to widen your entry. Both fields are \
+null when the timeframe hasn't broken structure at all.
 - Every entry requires a specific, structural invalidation level — a point where your \
 reasoning is demonstrably wrong. Place the stop beyond it, not at an arbitrary distance.
 - Set the stop from structure first, then check the resulting reward:risk. If the \

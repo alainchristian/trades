@@ -77,13 +77,56 @@ def swing_points(df: pd.DataFrame, left: int = 2, right: int = 2) -> pd.DataFram
     return pd.DataFrame({"swing_high": is_high, "swing_low": is_low})
 
 
+def break_recency(close: pd.Series, extreme: pd.Series, level: float,
+                   bullish: bool) -> tuple[int | None, float | None]:
+    """
+    How long ago price broke `level`, and how far it has since retraced back
+    toward it -- the piece `last_event` alone can't express, since that field
+    only reflects the CURRENT bar's close vs. level and has no memory of when
+    the break happened or how far price has travelled since.
+
+    Finds the most recent contiguous run where close was beyond `level` (above
+    it if bullish, below if bearish), even if that run has since ended (price
+    has pulled back through `level` again). Returns:
+      - bars_since_break: bars since that run started (the actual break bar)
+      - retracement_pct: 0 at the run's most extreme point, 100 back at
+        `level`, >100 if price has since broken back through it entirely
+
+    (None, None) if close has never been beyond `level` in the given window.
+    """
+    beyond = close > level if bullish else close < level
+    if not beyond.any():
+        return None, None
+
+    true_idx = np.flatnonzero(beyond.to_numpy())
+    run_end = true_idx[-1]
+    run_start = run_end
+    while run_start > 0 and beyond.iloc[run_start - 1]:
+        run_start -= 1
+    bars_since = len(close) - 1 - run_start
+
+    if bullish:
+        peak = extreme.iloc[run_start:run_end + 1].max()
+        span = peak - level
+        retracement = (peak - close.iloc[-1]) / span * 100 if span > 0 else 0.0
+    else:
+        peak = extreme.iloc[run_start:run_end + 1].min()
+        span = level - peak
+        retracement = (close.iloc[-1] - peak) / span * 100 if span > 0 else 0.0
+
+    return bars_since, round(float(max(retracement, 0.0)), 1)
+
+
 def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
     """
     Classify structure from the last confirmed swings.
 
     Returns trend ('bullish'/'bearish'/'ranging'), the last two swing highs/lows,
-    and whether the most recent move was a break of structure (BOS, continuation)
-    or a change of character (CHoCH, potential reversal).
+    whether the most recent move was a break of structure (BOS, continuation)
+    or a change of character (CHoCH, potential reversal), and -- via
+    bars_since_break/retracement_pct -- how long ago that break happened and
+    how far price has since retraced, so a retest doesn't require the
+    contradiction of "breaking out" and "currently pulled back" at once.
     """
     sw = swing_points(df, left, right)
     sh = df.loc[sw["swing_high"], "high"]
@@ -94,6 +137,8 @@ def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
         "last_swing_highs": [round(float(x), 6) for x in sh.tail(2)],
         "last_swing_lows": [round(float(x), 6) for x in sl.tail(2)],
         "last_event": None,
+        "bars_since_break": None,
+        "retracement_pct": None,
     }
     if len(sh) < 2 or len(sl) < 2:
         return result
@@ -108,11 +153,21 @@ def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
     elif lh and ll:
         result["trend"] = "bearish"
 
-    close = df["close"].iloc[-1]
-    if close > sh.iloc[-1]:
+    close_last = df["close"].iloc[-1]
+    if close_last > sh.iloc[-1]:
         result["last_event"] = "BOS_bullish" if result["trend"] == "bullish" else "CHoCH_bullish"
-    elif close < sl.iloc[-1]:
+    elif close_last < sl.iloc[-1]:
         result["last_event"] = "BOS_bearish" if result["trend"] == "bearish" else "CHoCH_bearish"
+
+    if result["trend"] == "bullish":
+        bars_since, retracement = break_recency(df["close"], df["high"], sh.iloc[-1], bullish=True)
+        result["bars_since_break"] = bars_since
+        result["retracement_pct"] = retracement
+    elif result["trend"] == "bearish":
+        bars_since, retracement = break_recency(df["close"], df["low"], sl.iloc[-1], bullish=False)
+        result["bars_since_break"] = bars_since
+        result["retracement_pct"] = retracement
+
     return result
 
 
