@@ -116,19 +116,17 @@ hr {{
     border-color: {BORDER} !important;
 }}
 
-/* ---------- Custom header ---------- */
-.dash-header {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 18px;
-    flex-wrap: wrap;
-    gap: 12px;
-}}
+/* ---------- Custom header ----------
+   Only the brand block (icon + title + caption) lives here -- the status
+   pill + Settings gear render in an isolated components.html iframe instead
+   (see the header section below) so the gear's click handler can run real
+   JS. st.markdown's unsafe_allow_html sanitizes out inline onclick
+   attributes, so that half of the header can't live in this block. */
 .dash-brand {{
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-bottom: 18px;
 }}
 .dash-brand-mark {{
     width: 38px; height: 38px; border-radius: 10px; flex: 0 0 auto;
@@ -145,36 +143,6 @@ hr {{
 }}
 .dash-brand-caption {{
     display: block; font-size: 11.5px; color: {TEXT_DIM}; font-weight: 400; margin-top: 2px;
-}}
-.status-pill {{
-    display: flex; align-items: center; gap: 8px;
-    padding: 7px 14px 7px 10px; border-radius: 999px;
-    font-size: 12.5px; font-weight: 500;
-    font-family: {MONO_STACK};
-}}
-.status-pill.live {{
-    background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.35); color: #86EFAC;
-}}
-.status-pill.idle {{
-    background: rgba(148,163,184,0.06); border: 1px solid {BORDER}; color: {TEXT_DIM};
-}}
-.status-pill .dot {{
-    width: 7px; height: 7px; border-radius: 50%;
-}}
-.status-pill.live .dot {{
-    background: {GREEN};
-    animation: dash-pulse 2s infinite;
-}}
-.status-pill.idle .dot {{
-    background: {SLATE};
-}}
-@keyframes dash-pulse {{
-    0% {{ box-shadow: 0 0 0 0 rgba(34,197,94,0.55); }}
-    70% {{ box-shadow: 0 0 0 7px rgba(34,197,94,0); }}
-    100% {{ box-shadow: 0 0 0 0 rgba(34,197,94,0); }}
-}}
-@media (prefers-reduced-motion: reduce) {{
-    .status-pill.live .dot {{ animation: none; }}
 }}
 
 /* ---------- Pipeline strip ---------- */
@@ -295,18 +263,92 @@ BRAND_MARK_SVG = (
     'stroke-linecap="round" stroke-linejoin="round"/></svg>'
 )
 
-st.markdown(f"""
-<div class="dash-header">
-  <div class="dash-brand">
-    <div class="dash-brand-mark">{BRAND_MARK_SVG}</div>
-    <div>
-      <h1>MT5 Agent <span>/ Cycle Analysis</span></h1>
-      <span class="dash-brand-caption">{header_caption}</span>
-    </div>
+GEAR_ICON_SVG = (
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="1.6">'
+    '<circle cx="12" cy="12" r="3"/>'
+    '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 '
+    '0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 '
+    '0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3'
+    'a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 '
+    '2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 '
+    '0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 '
+    '1.82V9c.66.28 1.51.94 1.51 1.63V12"/></svg>'
+)
+
+head_left, head_right = st.columns([3, 1], gap="small", vertical_alignment="center")
+
+with head_left:
+    st.markdown(f"""
+<div class="dash-brand">
+  <div class="dash-brand-mark">{BRAND_MARK_SVG}</div>
+  <div>
+    <h1>MT5 Agent <span>/ Cycle Analysis</span></h1>
+    <span class="dash-brand-caption">{header_caption}</span>
   </div>
-  <div class="status-pill {pill_class}"><span class="dot"></span>{pill_label}</div>
 </div>
 """, unsafe_allow_html=True)
+
+with head_right:
+    # The gear's only job is getting Settings back once the sidebar is
+    # collapsed. Streamlit has no Python API to control sidebar state, and
+    # st.markdown's unsafe_allow_html sanitizes out inline onclick
+    # attributes -- so this whole block renders in its own components.html
+    # iframe instead, which executes a real <script> that reaches into the
+    # parent document (same-origin srcdoc, confirmed reachable) and clicks
+    # the native stExpandSidebarButton. No-op if already expanded, since
+    # that button won't exist in the DOM then.
+    components.html(f"""
+<html><head><style>
+  html,body{{margin:0;padding:0;background:transparent;font-family:{FONT_STACK};}}
+  .header-right{{
+    display:flex;align-items:center;justify-content:flex-end;gap:14px;
+    height:100%;
+  }}
+  .status-pill{{
+    display:flex;align-items:center;gap:8px;
+    padding:7px 14px 7px 10px;border-radius:999px;
+    font-size:12.5px;font-weight:500;font-family:{MONO_STACK};
+    white-space:nowrap;
+  }}
+  .status-pill.live{{
+    background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.35);color:#86EFAC;
+  }}
+  .status-pill.idle{{
+    background:rgba(148,163,184,0.06);border:1px solid {BORDER};color:{TEXT_DIM};
+  }}
+  .status-pill .dot{{width:7px;height:7px;border-radius:50%;}}
+  .status-pill.live .dot{{background:{GREEN};animation:dash-pulse 2s infinite;}}
+  .status-pill.idle .dot{{background:{SLATE};}}
+  @keyframes dash-pulse{{
+    0%{{box-shadow:0 0 0 0 rgba(34,197,94,0.55);}}
+    70%{{box-shadow:0 0 0 7px rgba(34,197,94,0);}}
+    100%{{box-shadow:0 0 0 0 rgba(34,197,94,0);}}
+  }}
+  @media (prefers-reduced-motion:reduce){{ .status-pill.live .dot{{animation:none;}} }}
+  .icon-btn{{
+    width:34px;height:34px;border-radius:9px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid {BORDER};background:{PANEL};color:{TEXT_DIM};
+    cursor:pointer;
+  }}
+  .icon-btn:hover{{border-color:{BORDER_GLOW};color:{CYAN};}}
+</style></head>
+<body>
+  <div class="header-right">
+    <div class="status-pill {pill_class}"><span class="dot"></span>{pill_label}</div>
+    <div class="icon-btn" id="settingsGear" title="Settings (expands the sidebar)">{GEAR_ICON_SVG}</div>
+  </div>
+  <script>
+    document.getElementById('settingsGear').addEventListener('click', function() {{
+      try {{
+        var b = window.parent.document.querySelector('[data-testid=stExpandSidebarButton]');
+        if (b) {{ b.click(); }}
+      }} catch (e) {{}}
+    }});
+  </script>
+</body></html>
+""", height=44, scrolling=False)
 
 # Mirrors the real 7-stage cycle from the architecture page (pages/1_Architecture.py).
 # Stages 1-3 run every cycle regardless of outcome, so they're marked active;
