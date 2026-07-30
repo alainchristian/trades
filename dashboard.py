@@ -21,8 +21,9 @@ from agent.analytics import (
 
 # ---------------------------------------------------------------------------
 # Palette. Matches assets/mt5_agent_dashboard_concept.html's :root variables.
-# Fixed categorical order (never re-cycled) for action colors, one sequential
-# ramp for magnitude, a reserved status pair for approved/rejected.
+# Fixed categorical order (never re-cycled) for action colors; cyan marks
+# confidence/cost, blue marks per-symbol cost, red marks rejections, slate
+# marks hour-of-day -- one hue, one meaning, throughout the dashboard.
 # ---------------------------------------------------------------------------
 BG = "#080D18"
 PANEL = "#0F1729"
@@ -40,11 +41,6 @@ RED = "#F87171"
 SLATE = "#8CA0BE"
 TEXT = "#E7ECF5"
 TEXT_DIM = "#9FB0C9"
-
-# Cyan sequential ramp, light -> dark, for the confidence-bucket ordinal
-# encoding. Placeholder pending the chart-restyle pass.
-BLUE_RAMP_10 = ["#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6",
-                "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"]
 
 # Assigned by identity, fixed order, never re-cycled. "hold" is deliberately a
 # neutral (no action taken), not a hue -- matches the concept's chip colors.
@@ -486,8 +482,8 @@ with col1:
 with col2:
     st.subheader("Confidence distribution")
     buckets = confidence_buckets(df)
-    fig = px.bar(buckets, x="bucket", y="count", color="bucket",
-                 color_discrete_sequence=BLUE_RAMP_10)
+    fig = px.bar(buckets, x="bucket", y="count")
+    fig.update_traces(marker_color=CYAN)
     fig.update_layout(xaxis_title="confidence", yaxis_title="cycles")
     chart(_themed(fig))
 
@@ -502,8 +498,8 @@ with col3:
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=by_time["local_ts"], y=by_time["cum_cost"], mode="lines",
-        line=dict(color=BLUE, width=2), fill="tozeroy",
-        fillcolor="rgba(59,130,246,0.10)",
+        line=dict(color=CYAN, width=2), fill="tozeroy",
+        fillcolor="rgba(34,211,238,0.10)",
     ))
     fig.update_layout(xaxis_title=None, yaxis_title="$ cumulative")
     chart(_themed(fig))
