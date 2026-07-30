@@ -290,14 +290,20 @@ with head_left:
 """, unsafe_allow_html=True)
 
 with head_right:
-    # The gear's only job is getting Settings back once the sidebar is
-    # collapsed. Streamlit has no Python API to control sidebar state, and
-    # st.markdown's unsafe_allow_html sanitizes out inline onclick
-    # attributes -- so this whole block renders in its own components.html
+    # The gear opens Streamlit's native "..." menu (Rerun, Clear cache,
+    # Print, Record screen) -- the same dropdown that existed before the
+    # dev-chrome CSS hid stToolbarActions. st.markdown's unsafe_allow_html
+    # sanitizes out inline onclick attributes and Streamlit has no Python
+    # API to open that menu, so this renders in its own components.html
     # iframe instead, which executes a real <script> that reaches into the
     # parent document (same-origin srcdoc, confirmed reachable) and clicks
-    # the native stExpandSidebarButton. No-op if already expanded, since
-    # that button won't exist in the DOM then.
+    # the native stMainMenuButton directly. The button is still functional
+    # while visually hidden -- only its container's CSS visibility/height
+    # changed, not the element itself -- so the dropdown opens at
+    # Streamlit's normal fixed position (top-right), not anchored to this
+    # gear icon. Sidebar recovery when collapsed is handled separately by
+    # the native "»" control, unaffected by this change (see the CSS
+    # comment above stToolbarActions).
     components.html(f"""
 <html><head><style>
   html,body{{margin:0;padding:0;background:transparent;font-family:{FONT_STACK};}}
@@ -337,12 +343,12 @@ with head_right:
 <body>
   <div class="header-right">
     <div class="status-pill {pill_class}"><span class="dot"></span>{pill_label}</div>
-    <div class="icon-btn" id="settingsGear" title="Settings (expands the sidebar)">{GEAR_ICON_SVG}</div>
+    <div class="icon-btn" id="settingsGear" title="Menu">{GEAR_ICON_SVG}</div>
   </div>
   <script>
     document.getElementById('settingsGear').addEventListener('click', function() {{
       try {{
-        var b = window.parent.document.querySelector('[data-testid=stExpandSidebarButton]');
+        var b = window.parent.document.querySelector('[data-testid=stMainMenuButton]');
         if (b) {{ b.click(); }}
       }} catch (e) {{}}
     }});
