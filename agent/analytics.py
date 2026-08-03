@@ -26,6 +26,7 @@ def load_cycles(logs_dir: str = "logs") -> pd.DataFrame:
             d = e.get("decision") or {}
             v = e.get("verdict") or {}
             c = e.get("cost") or {}
+            x = e.get("execution") or {}
             rows.append({
                 "ts": e.get("ts"),
                 "symbol": e.get("symbol"),
@@ -44,13 +45,15 @@ def load_cycles(logs_dir: str = "logs") -> pd.DataFrame:
                 "input_tokens": c.get("input_tokens", 0) or 0,
                 "output_tokens": c.get("output_tokens", 0) or 0,
                 "latency_ms": c.get("latency_ms", 0) or 0,
+                "execution_success": x.get("success"),
+                "execution_ticket": x.get("ticket"),
             })
     if not rows:
         return pd.DataFrame(columns=[
             "ts", "symbol", "action", "direction", "setup_name", "confidence",
             "reasoning", "stop_loss", "take_profit", "approved", "rejections",
             "volume", "risk_amount", "rr_ratio", "input_tokens", "output_tokens",
-            "latency_ms",
+            "latency_ms", "execution_success", "execution_ticket",
         ])
 
     df = pd.DataFrame(rows)
