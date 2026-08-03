@@ -6,7 +6,7 @@ Replay backtester (BUILD_PLAN.md Phase 4).
 bars for each configured symbol and reuses features.market_structure() -- the
 actual production structure-detection code, not a reimplementation -- to
 check how often the strategy brief's entry conjunction actually occurs, via
-two independent paths:
+two conjunctions (see the "both" bucket note below for why they can overlap):
 
   BOS-origin (continuation, trend-aligned):
     H4 has a directional trend (not ranging)
@@ -23,11 +23,18 @@ two independent paths:
   This path deliberately does NOT require h1_trend == h4_trend: a confirmed
   reversal is, by nature, often early relative to the slower H4 timeframe --
   that is the entire value of catching it. Gating it on H4/H1 alignment would
-  filter out exactly the setups it exists to surface. The two paths are
-  mutually exclusive by construction: choch_confirmed can only be true when
-  H1's last_event is a CHoCH, which only happens when h1_trend is NOT the
-  break direction -- so a CHoCH_confirmed hit never also satisfies the
-  BOS-origin path's alignment check.
+  filter out exactly the setups it exists to surface.
+
+  The two paths are NOT always mutually exclusive: choch_confirmed requires
+  H1's last_event to be a CHoCH (h1_trend != the break direction), but
+  h1_trend can still equal h4_trend if h1_trend itself is the *other*
+  direction (e.g. a CHoCH_bearish inside an H1 uptrend, where h1_trend is
+  "bullish" and h4_trend also happens to be "bullish"). When both criteria
+  fire on the same bar-close, it is bucketed as its own third origin, "both"
+  -- never silently forced into one bucket or the other, and never dropped.
+  Per-origin and combined totals below are computed from these three
+  mutually exclusive buckets, so the combined total is an exact sum with
+  neither double-counting nor undercounting.
 
 No API calls, no risk.py, no order simulation -- this only answers "how often
 does the setup exist," not "would the model have taken it" or "would it have
@@ -55,7 +62,7 @@ class ConjunctionHit:
     h4_trend: str
     h1_bars_since_break: int
     h1_retracement_pct: float
-    origin: str  # "BOS" (trend-aligned continuation) or "CHoCH_confirmed" (validated reversal)
+    origin: str  # "BOS", "CHoCH_confirmed", or "both" -- see module docstring for the convention
 
 
 def fetch_all_bars(symbol: str, timeframe_const: int, lookback_days: int) -> pd.DataFrame:
@@ -124,18 +131,31 @@ def replay_symbol(symbol: str, h4_df: pd.DataFrame, h1_df: pd.DataFrame,
         retr = h1_structure["retracement_pct"]
 
         # BOS-origin: H1 continuation aligned with H4's established direction.
-        if h1_trend == h4_trend and bsb is not None and retr is not None \
-                and 20 <= retr <= 80 and int(bsb) <= max_bars_since_break:
-            hits.append(ConjunctionHit(symbol, h1_now, h4_trend, int(bsb), retr, origin="BOS"))
+        is_bos = (h1_trend == h4_trend and bsb is not None and retr is not None
+                  and 20 <= retr <= 80 and int(bsb) <= max_bars_since_break)
 
         # CHoCH_confirmed-origin: H1 reversal validated by a follow-through swing
         # + retest (see module docstring for why this doesn't gate on alignment).
         # bsb/retr here are the ORIGINAL CHoCH's own numbers, not the confirming
         # swing's -- market_structure doesn't expose the latter -- so they're
         # reported for visibility only, not filtered on.
-        elif h1_structure.get("choch_confirmed") and bsb is not None and retr is not None:
-            hits.append(ConjunctionHit(symbol, h1_now, h4_trend, int(bsb), retr,
-                                        origin="CHoCH_confirmed"))
+        is_choch_confirmed = (h1_structure.get("choch_confirmed")
+                               and bsb is not None and retr is not None)
+
+        # Explicit three-way bucketing (see module docstring): a bar-close
+        # satisfying both criteria goes to "both", not silently to whichever
+        # check happens to run first.
+        if is_bos and is_choch_confirmed:
+            origin = "both"
+        elif is_bos:
+            origin = "BOS"
+        elif is_choch_confirmed:
+            origin = "CHoCH_confirmed"
+        else:
+            origin = None
+
+        if origin is not None:
+            hits.append(ConjunctionHit(symbol, h1_now, h4_trend, int(bsb), retr, origin=origin))
 
     return hits, steps
 
@@ -186,6 +206,8 @@ def main() -> int:
           f"retracement_pct in [20,80] + H1 bars_since_break <= {args.max_bars_since_break}")
     print("CHoCH_confirmed-origin conjunction: H4 trend directional + H1 choch_confirmed "
           "true (independent of H1/H4 alignment -- see module docstring)")
+    print("'both' bucket: bar-closes satisfying both criteria simultaneously -- reported "
+          "separately, not folded into either origin (see module docstring)")
     print(f"Strategy brief (unmodified, from config.yaml):\n{cfg.strategy_brief}\n")
 
     all_hits: dict[str, list[ConjunctionHit]] = {}
@@ -210,7 +232,7 @@ def main() -> int:
     print("=" * 70)
 
     totals = {}
-    for origin in ("BOS", "CHoCH_confirmed"):
+    for origin in ("BOS", "CHoCH_confirmed", "both"):
         print(f"\n--- {origin}-origin ---")
         total_steps = 0
         total_hit_bars = 0
@@ -234,13 +256,17 @@ def main() -> int:
               f"H1 bar-closes matched, {total_episodes} distinct episodes")
         totals[origin] = (total_hit_bars, total_steps, total_episodes)
 
+    # Sum across the three mutually exclusive buckets -- exactly once each,
+    # no double-counting (a "both" hit isn't also in BOS or CHoCH_confirmed)
+    # and no dropping (it isn't excluded from either either).
     combined_hits = sum(h for h, _, _ in totals.values())
-    combined_steps = totals["BOS"][1]  # same denominator for both origins
+    combined_steps = totals["BOS"][1]  # same denominator for all three buckets
     combined_episodes = sum(e for _, _, e in totals.values())
     print(f"\n--- combined ---")
     print(f"TOTAL across {len(cfg.symbols)} symbols: {combined_hits}/{combined_steps} "
           f"H1 bar-closes matched, {combined_episodes} distinct episodes "
-          f"(BOS {totals['BOS'][0]} + CHoCH_confirmed {totals['CHoCH_confirmed'][0]})")
+          f"(BOS {totals['BOS'][0]} + CHoCH_confirmed {totals['CHoCH_confirmed'][0]} "
+          f"+ both {totals['both'][0]})")
     # Rough equivalent at the live M15 decision cadence: each matching H1 bar
     # is "live" for up to 4 M15 cycles (assuming H1 structure doesn't change
     # mid-bar, which it can't by construction).
