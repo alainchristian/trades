@@ -127,6 +127,21 @@ def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
     bars_since_break/retracement_pct -- how long ago that break happened and
     how far price has since retraced, so a retest doesn't require the
     contradiction of "breaking out" and "currently pulled back" at once.
+
+    choch_confirmed answers a question last_event alone cannot: has this CHoCH
+    (a single reversal bar) been structurally validated, or is it still just an
+    unconfirmed reversal attempt? Confirmation is a *second*, independent swing
+    in the reversal's direction breaking beyond the first (hh for a CHoCH_bullish,
+    ll for a CHoCH_bearish) -- price didn't just poke through once, it printed a
+    fresh confirmed extreme afterwards -- with that newer swing's own retest
+    (bars_since_break/retracement_pct, already computed above since it uses
+    the same sh.iloc[-1]/sl.iloc[-1] this hh/ll check reads) sitting in the
+    20-80% band. Deliberately does not require the *other* swing type to agree
+    (i.e. does not wait for `trend` to fully flip to the reversal direction):
+    that stricter, both-types-at-once gate is what leaves `trend` at "ranging"
+    on a single non-conforming swing, and it would starve confirmation of the
+    exact cases -- one side of structure moving before the other -- it exists
+    to catch.
     """
     sw = swing_points(df, left, right)
     sh = df.loc[sw["swing_high"], "high"]
@@ -139,6 +154,7 @@ def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
         "last_event": None,
         "bars_since_break": None,
         "retracement_pct": None,
+        "choch_confirmed": False,
     }
     if len(sh) < 2 or len(sl) < 2:
         return result
@@ -159,14 +175,20 @@ def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
     elif close_last < sl.iloc[-1]:
         result["last_event"] = "BOS_bearish" if result["trend"] == "bearish" else "CHoCH_bearish"
 
-    if result["trend"] == "bullish":
+    if result["last_event"] in ("BOS_bullish", "CHoCH_bullish"):
         bars_since, retracement = break_recency(df["close"], df["high"], sh.iloc[-1], bullish=True)
         result["bars_since_break"] = bars_since
         result["retracement_pct"] = retracement
-    elif result["trend"] == "bearish":
+    elif result["last_event"] in ("BOS_bearish", "CHoCH_bearish"):
         bars_since, retracement = break_recency(df["close"], df["low"], sl.iloc[-1], bullish=False)
         result["bars_since_break"] = bars_since
         result["retracement_pct"] = retracement
+
+    retr = result["retracement_pct"]
+    if result["last_event"] == "CHoCH_bullish" and hh and retr is not None and 20 <= retr <= 80:
+        result["choch_confirmed"] = True
+    elif result["last_event"] == "CHoCH_bearish" and ll and retr is not None and 20 <= retr <= 80:
+        result["choch_confirmed"] = True
 
     return result
 

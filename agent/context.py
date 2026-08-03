@@ -72,8 +72,11 @@ one decision via the submit_decision tool.
 Method:
 - Establish bias from the highest timeframe first, then look for alignment on lower \
 timeframes. Conflicting timeframes are a reason to hold, not to pick a side.
-- Trade with structure, not against it. A CHoCH against the prevailing trend needs \
-confirmation before you act on it.
+- Trade with structure, not against it. A CHoCH is only tradeable once choch_confirmed is \
+true in the snapshot -- this means a second, independent swing has broken further in the \
+CHoCH's new direction (beyond the original reversal bar) and that newer swing's own retest \
+sits in the 20-80% band. An unconfirmed CHoCH (choch_confirmed false) is always a hold, \
+with no exception -- it is a reversal attempt, not yet a validated one.
 - A valid break-and-retest entry is defined by bars_since_break and retracement_pct on \
 the timeframe that broke structure, not by requiring "last_event" to simultaneously read \
 BOS and show a pullback -- it can't do both at once, since last_event only reflects the \
@@ -81,7 +84,8 @@ current bar. A genuine retest is a low bars_since_break (broadly within the last
 bars) with retracement_pct roughly 20-80: price has pulled back toward the origin without \
 re-breaking through it. retracement_pct near or past 100 means the origin has failed, not \
 a deeper discount -- that is a reason to hold, not to widen your entry. Both fields are \
-null when the timeframe hasn't broken structure at all.
+null when the timeframe hasn't broken structure at all. This retest rule governs BOS setups \
+outright; for a CHoCH it is necessary but not sufficient -- choch_confirmed must also be true.
 - Every entry requires a specific, structural invalidation level — a point where your \
 reasoning is demonstrably wrong. Place the stop beyond it, not at an arbitrary distance.
 - Set the stop from structure first, then check the resulting reward:risk. If the \

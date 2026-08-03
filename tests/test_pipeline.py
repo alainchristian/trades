@@ -85,6 +85,100 @@ assert bars_since == 4, f"expected bars_since=4, got {bars_since}"
 assert retracement == 60.0, f"expected retracement=60.0, got {retracement}"
 print(f"  bearish mirror -> bars_since={bars_since} retracement={retracement} OK")
 
+# --- features.market_structure: branches on last_event, not trend ----------
+# Bug: bars_since_break/retracement_pct used to branch on `trend`, so a CHoCH
+# (a break AGAINST the prevailing trend) called break_recency against the
+# trend-direction level instead of the level that was actually broken --
+# CHoCH retests could never mature into a measurable setup.
+print("\n=== features.market_structure: last_event branching ===")
+
+
+def make_structure_df(closes):
+    # NB: pass the raw list, not a pre-built Series -- a Series carries its own
+    # (default RangeIndex) index, which pandas aligns against the DatetimeIndex
+    # below, silently turning every column to NaN.
+    return pd.DataFrame(
+        {"open": closes, "high": closes, "low": closes, "close": closes,
+         "tick_volume": 500},
+        index=pd.date_range("2026-07-01", periods=len(closes), freq="15min", tz="UTC"),
+    )
+
+
+# Bullish trend (swing highs 1.0800 -> 1.0830, swing lows 1.0670 -> 1.0700)
+# then a sharp break BELOW the last swing low (1.0700) -- a CHoCH_bearish.
+# The level that broke is the swing LOW, not the swing high the old buggy
+# code (branching on trend=="bullish") would have used.
+choch_closes = [
+    1.0700, 1.0690, 1.0670, 1.0690, 1.0710, 1.0740, 1.0770, 1.0800, 1.0770,
+    1.0740, 1.0710, 1.0700, 1.0710, 1.0740, 1.0770, 1.0800, 1.0830, 1.0800,
+    1.0770, 1.0650, 1.0630, 1.0610, 1.0600, 1.0590, 1.0585, 1.0620,
+]
+choch = features.market_structure(make_structure_df(choch_closes))
+assert choch["trend"] == "bullish", f"expected bullish trend, got {choch['trend']}"
+assert choch["last_event"] == "CHoCH_bearish", f"expected CHoCH_bearish, got {choch['last_event']}"
+assert choch["bars_since_break"] == 6, f"expected bars_since_break=6, got {choch['bars_since_break']}"
+assert choch["retracement_pct"] == 30.4, f"expected retracement_pct=30.4, got {choch['retracement_pct']}"
+assert choch["choch_confirmed"] is False, "no follow-through yet -- must not be confirmed"
+print(f"  CHoCH_bearish in an uptrend -> bars_since={choch['bars_since_break']} "
+      f"retracement={choch['retracement_pct']} (measured off the broken swing low) OK")
+
+# Regression guard: BOS (break WITH the trend) must still work after the fix --
+# same uptrend, but this time price breaks ABOVE the last swing high (1.0830)
+# instead of below the last swing low.
+bos_closes = [
+    1.0700, 1.0690, 1.0670, 1.0690, 1.0710, 1.0740, 1.0770, 1.0800, 1.0770,
+    1.0740, 1.0710, 1.0700, 1.0710, 1.0740, 1.0770, 1.0800, 1.0830, 1.0800,
+    1.0770, 1.0850, 1.0870, 1.0890, 1.0900, 1.0910, 1.0915, 1.0880,
+]
+bos = features.market_structure(make_structure_df(bos_closes))
+assert bos["trend"] == "bullish", f"expected bullish trend, got {bos['trend']}"
+assert bos["last_event"] == "BOS_bullish", f"expected BOS_bullish, got {bos['last_event']}"
+assert bos["bars_since_break"] == 6, f"expected bars_since_break=6, got {bos['bars_since_break']}"
+assert bos["retracement_pct"] == 41.2, f"expected retracement_pct=41.2, got {bos['retracement_pct']}"
+assert bos["choch_confirmed"] is False, "BOS is not a CHoCH -- confirmation doesn't apply"
+print(f"  BOS_bullish in an uptrend -> bars_since={bos['bars_since_break']} "
+      f"retracement={bos['retracement_pct']} OK")
+
+# --- features.market_structure: choch_confirmed -----------------------------
+# A CHoCH is a single reversal bar; it says nothing about whether the reversal
+# stuck. choch_confirmed answers that: has a *second*, independent swing in the
+# CHoCH's direction (ll for a bearish CHoCH) broken beyond the first, with that
+# newer swing's own retest in the healthy 20-80% band? Deliberately does not
+# require the opposite swing type (highs, here) to also flip -- both cases below
+# still read trend="ranging" (only the swing-low side has moved), which is
+# exactly the asymmetric, one-side-first case this field exists to catch.
+print("\n=== features.market_structure: choch_confirmed ===")
+
+# Same bullish setup (H 1.0800->1.0830, L 1.0670->1.0700), then a break down that
+# prints its OWN new, confirmed lower low (1.0600, via the tied 1.0630/1.0630
+# pair -- equal values can't satisfy either's strict "greater than" check against
+# each other, so neither becomes a spurious new swing high) before dipping
+# further to 1.0580 and retracing 75% of the way back up to 1.0600.
+confirmed_closes = [
+    1.0700, 1.0690, 1.0670, 1.0690, 1.0710, 1.0740, 1.0770, 1.0800, 1.0770,
+    1.0740, 1.0710, 1.0700, 1.0710, 1.0740, 1.0770, 1.0800, 1.0830, 1.0800,
+    1.0770, 1.0650, 1.0600, 1.0630, 1.0630, 1.0580, 1.0595,
+]
+confirmed = features.market_structure(make_structure_df(confirmed_closes))
+assert confirmed["trend"] == "ranging", f"expected ranging (highs unchanged), got {confirmed['trend']}"
+assert confirmed["last_event"] == "CHoCH_bearish", f"expected CHoCH_bearish, got {confirmed['last_event']}"
+assert confirmed["retracement_pct"] == 75.0, f"expected retracement_pct=75.0, got {confirmed['retracement_pct']}"
+assert confirmed["choch_confirmed"] is True, "fresh lower low + valid 20-80% retest must confirm"
+print(f"  fresh lower low, 75% retest -> choch_confirmed={confirmed['choch_confirmed']} OK")
+
+# Same setup, but the final bar sits at 1.0598 instead of 1.0595 -- retracement
+# 90%, past the 80% ceiling. The reversal's origin has been round-tripped back
+# through, not retested from a healthy discount, so this must NOT confirm.
+overextended_closes = confirmed_closes[:-1] + [1.0598]
+overextended = features.market_structure(make_structure_df(overextended_closes))
+assert overextended["last_event"] == "CHoCH_bearish", \
+    f"expected CHoCH_bearish, got {overextended['last_event']}"
+assert overextended["retracement_pct"] == 90.0, \
+    f"expected retracement_pct=90.0, got {overextended['retracement_pct']}"
+assert overextended["choch_confirmed"] is False, "90% retracement is overextended -- must not confirm"
+print(f"  fresh lower low, 90% (overextended) retest -> "
+      f"choch_confirmed={overextended['choch_confirmed']} OK")
+
 # --- config validation ------------------------------------------------------
 print("\n=== config validation ===")
 import yaml, tempfile
