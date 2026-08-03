@@ -117,9 +117,40 @@ def break_recency(close: pd.Series, extreme: pd.Series, level: float,
     return bars_since, round(float(max(retracement, 0.0)), 1)
 
 
+def _swing_direction(swings: pd.Series, n: int = 4) -> str:
+    """
+    Direction of the last `n` confirmed swings of one type (all highs, or all
+    lows), by majority of consecutive pairwise moves rather than requiring
+    every single one to agree. A lone non-conforming swing -- noise, not a
+    genuine reversal -- costs one vote instead of flipping the whole read to
+    "ranging".
+
+    With exactly 2 swings available (the minimum for any read at all) this
+    collapses to a single comparison, identical to the old strict check --
+    the majority vote only kicks in once there's enough history for "majority"
+    to mean something, so early-window behaviour is no more conservative than
+    before. `n=4` (3 pairwise moves) is odd-vote-equivalent: 4 swings never
+    tie, they only can with exactly 3 (one tie-breaking "flat" vote short).
+    """
+    diffs = swings.tail(n).diff().dropna()
+    up = int((diffs > 0).sum())
+    down = int((diffs < 0).sum())
+    if up > down:
+        return "up"
+    if down > up:
+        return "down"
+    return "flat"
+
+
 def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
     """
     Classify structure from the last confirmed swings.
+
+    trend is a majority vote over the last few swings of each type (see
+    _swing_direction), not a strict "every single one must agree" check --
+    one non-conforming swing out of several is noise, not evidence the trend
+    ended, and treating it as disqualifying was misclassifying visibly
+    trending markets as "ranging" on that single swing alone.
 
     Returns trend ('bullish'/'bearish'/'ranging'), the last two swing highs/lows,
     whether the most recent move was a break of structure (BOS, continuation)
@@ -159,14 +190,17 @@ def market_structure(df: pd.DataFrame, left: int = 2, right: int = 2) -> dict:
     if len(sh) < 2 or len(sl) < 2:
         return result
 
+    # Strict last-two comparisons: kept for choch_confirmed below, which asks
+    # a narrower question ("did the freshest swing beat the one before it?")
+    # than the multi-swing trend read this function otherwise computes.
     hh = sh.iloc[-1] > sh.iloc[-2]
-    hl = sl.iloc[-1] > sl.iloc[-2]
-    lh = sh.iloc[-1] < sh.iloc[-2]
     ll = sl.iloc[-1] < sl.iloc[-2]
 
-    if hh and hl:
+    high_dir = _swing_direction(sh)
+    low_dir = _swing_direction(sl)
+    if high_dir == "up" and low_dir == "up":
         result["trend"] = "bullish"
-    elif lh and ll:
+    elif high_dir == "down" and low_dir == "down":
         result["trend"] = "bearish"
 
     close_last = df["close"].iloc[-1]

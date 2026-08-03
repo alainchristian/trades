@@ -179,6 +179,47 @@ assert overextended["choch_confirmed"] is False, "90% retracement is overextende
 print(f"  fresh lower low, 90% (overextended) retest -> "
       f"choch_confirmed={overextended['choch_confirmed']} OK")
 
+# --- features.market_structure: trend is a majority vote, not a single swing --
+# Old rule: trend required the LAST swing high to beat the one before it, AND
+# the last swing low likewise -- both, using only the freshest pair. One
+# non-conforming swing (noise, not a reversal) was enough to misclassify a
+# visibly trending market as "ranging". New rule: majority of the last 4
+# swings of each type (see _swing_direction). Below, 3 of 4 highs and all 4
+# lows rise -- the 4th high (1.088) dips below the 3rd (1.09), the one
+# non-conforming swing the old rule would have kicked out to "ranging" on.
+print("\n=== features.market_structure: majority-vote trend ===")
+
+majority_closes = [
+    1.0700, 1.0720, 1.0740, 1.0760, 1.0780,
+    1.0800,                                    # H1
+    1.0780, 1.0760,
+    1.0730,                                    # L1
+    1.0760, 1.0800, 1.0830,
+    1.0850,                                    # H2
+    1.0820, 1.0790,
+    1.0760,                                    # L2
+    1.0800, 1.0850,
+    1.0900,                                    # H3
+    1.0870, 1.0840,
+    1.0810,                                    # L3
+    1.0850, 1.0860,
+    1.0880,                                    # H4 -- LOWER than H3: the one non-conforming swing
+    1.0850,
+    1.0830,                                    # L4 -- still higher than L3
+    1.0850, 1.0870,
+]
+majority = features.market_structure(make_structure_df(majority_closes))
+assert majority["last_swing_highs"] == [1.09, 1.088], \
+    f"expected swing highs [1.09, 1.088], got {majority['last_swing_highs']}"
+assert majority["last_swing_lows"] == [1.081, 1.083], \
+    f"expected swing lows [1.081, 1.083], got {majority['last_swing_lows']}"
+assert majority["trend"] == "bullish", (
+    "one non-conforming swing high (1.088 < 1.09) must not override 3-of-4 "
+    f"rising highs + 4-of-4 rising lows; got {majority['trend']}"
+)
+print(f"  3-of-4 rising highs + 4-of-4 rising lows (last high dips) -> "
+      f"trend={majority['trend']} OK")
+
 # --- config validation ------------------------------------------------------
 print("\n=== config validation ===")
 import yaml, tempfile
