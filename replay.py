@@ -56,6 +56,7 @@ import MetaTrader5 as mt5
 
 from agent.config import Config
 from agent import features
+from agent.mt5_client import TIMEFRAME_SECONDS
 
 
 @dataclass
@@ -94,6 +95,31 @@ def fetch_all_bars(symbol: str, timeframe_const: int, lookback_days: int,
     return df.set_index("time").sort_index()
 
 
+def closed_cutoff(ts: pd.Timestamp, grain_period: pd.Timedelta, timeframe: str) -> pd.Timestamp:
+    """
+    The latest bar-OPEN timestamp for `timeframe` that has FULLY CLOSED by the
+    moment a bar at `ts` (on the caller's own evaluation grain, period
+    `grain_period`) itself becomes known -- i.e. at ts + grain_period, not at
+    ts itself. MT5 bar timestamps are open times, so naively filtering a
+    COARSER timeframe with `df.index <= ts` is up to one whole coarser bar too
+    permissive: it can show the still-forming current candle's
+    already-known-in-hindsight final OHLC before real time would have made it
+    available. For `timeframe == ` the caller's own grain this is a no-op
+    (reduces to exactly `ts`); for a coarser one it isn't.
+
+    Canonical home for this helper: replay.py doesn't import from
+    pnl_replay.py (that would be circular, since pnl_replay.py already
+    imports fetch_all_bars from here) so pnl_replay.py imports this from
+    replay.py instead of duplicating it. Confirmed empirically before this
+    fix: replay_symbol()'s H4-against-H1 grain leaked on 75% of H1
+    evaluation steps, up to 3 hours of premature H4 data at the worst case
+    (H1 landing exactly on an H4 boundary) -- the identical class of bug
+    pnl_replay.py's snapshots had for H1/H4 against an M15 grain.
+    """
+    true_now = ts + grain_period
+    return true_now - pd.Timedelta(seconds=TIMEFRAME_SECONDS[timeframe])
+
+
 def replay_symbol(symbol: str, h4_df: pd.DataFrame, h1_df: pd.DataFrame,
                    window: int, max_bars_since_break: int) -> tuple[list[ConjunctionHit], int]:
     """
@@ -105,6 +131,7 @@ def replay_symbol(symbol: str, h4_df: pd.DataFrame, h1_df: pd.DataFrame,
     """
     hits: list[ConjunctionHit] = []
     steps = 0
+    h1_period = pd.Timedelta(seconds=TIMEFRAME_SECONDS["H1"])
 
     for i in range(window, len(h1_df)):
         h1_window = h1_df.iloc[i - window + 1: i + 1]
@@ -116,13 +143,18 @@ def replay_symbol(symbol: str, h4_df: pd.DataFrame, h1_df: pd.DataFrame,
         assert h1_window.index[-1] == h1_now
         assert (h1_window.index <= h1_now).all()
 
+        # H1 is this function's own grain, so h1_now itself becomes known at
+        # its own close (h1_now + h1_period) -- H4 must be filtered against
+        # THAT moment, not against h1_now's open time. See closed_cutoff().
+        h4_cutoff = closed_cutoff(h1_now, h1_period, "H4")
+
         # pandas' own tz-aware searchsorted -- raw numpy datetime64 silently
         # drops tzinfo and produces wrong (or erroring) comparisons.
-        h4_pos = h4_df.index.searchsorted(h1_now, side="right")
+        h4_pos = h4_df.index.searchsorted(h4_cutoff, side="right")
         if h4_pos < window:
             continue  # not enough H4 history yet
         h4_window = h4_df.iloc[h4_pos - window: h4_pos]
-        assert (h4_window.index <= h1_now).all(), "H4 lookahead leak"
+        assert (h4_window.index <= h4_cutoff).all(), "H4 lookahead leak"
 
         steps += 1
         h4_structure = features.market_structure(h4_window)
