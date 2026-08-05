@@ -93,17 +93,23 @@ class SessionState:
     def kill_switch_active(self) -> bool:
         return Path(self.cfg.kill_switch_file).exists()
 
-    def day_start(self) -> datetime:
+    def day_start(self, at: datetime | None = None) -> datetime:
         tz = ZoneInfo(self.cfg.session.timezone)
-        now = datetime.now(tz)
+        now = at.astimezone(tz) if at else datetime.now(tz)
         return datetime.combine(now.date(), dtime.min, tzinfo=tz).astimezone(timezone.utc)
 
     def daily_realised(self) -> float:
         return self.client.realised_pnl_since(self.day_start())
 
-    def session_open(self) -> tuple[bool, str]:
+    def session_open(self, at: datetime | None = None) -> tuple[bool, str]:
+        """
+        `at` lets a replay harness evaluate this gate at a historical timestamp
+        instead of wall-clock now, reusing the exact production rule rather than
+        reimplementing it (BUILD_PLAN.md Phase 4: "reuse the actual production
+        modules"). Defaults to real now, so run.py's behaviour is unchanged.
+        """
         tz = ZoneInfo(self.cfg.session.timezone)
-        now = datetime.now(tz)
+        now = at.astimezone(tz) if at else datetime.now(tz)
 
         if now.weekday() not in self.cfg.session.trading_days:
             return False, f"{now:%A} is not a trading day"

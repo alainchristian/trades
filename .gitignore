@@ -5,3 +5,8 @@ logs/
 .venv/
 __pycache__/
 *.pyc
+pnl_replay_cache.json
+pnl_replay_specs.json
+pnl_replay_live_cache.json
+pnl_replay_live_results.jsonl
+pnl_replay_candidates.csv
